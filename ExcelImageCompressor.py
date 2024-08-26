@@ -24,10 +24,10 @@ def find_excel_files(folder):
     ]
 
 
-def compress_image(image):
+def compress_image(image, quality=50):
     with Image.open(BytesIO(image._data())) as img:
         img_byte_arr = BytesIO()
-        img.save(img_byte_arr, format=img.format if img.format else "PNG", dpi=(96, 96))
+        img.save(img_byte_arr, format="JPEG", quality=quality)
         return OpenpyxlImage(img_byte_arr)
 
 
@@ -45,9 +45,29 @@ def process_file(file):
         total_images = sum(len(ws._images) for ws in workbook.worksheets)
         updated_images = 0
 
+        # 保存元の画像の位置とサイズ
+        original_images_info = {}
+        for ws in workbook.worksheets:
+            original_images_info[ws] = [
+                {
+                    "image": img,
+                    "anchor": img.anchor,
+                    "width": img.width,
+                    "height": img.height,
+                }
+                for img in ws._images
+            ]
+
+        # 圧縮と元の位置に戻す
         for ws in workbook.worksheets:
             images = ws._images
-            compressed_images = [compress_image(img) for img in images]
+            compressed_images = [compress_image(img, quality=50) for img in images]
+
+            for img, info in zip(compressed_images, original_images_info[ws]):
+                img.anchor = info["anchor"]
+                img.width = info["width"]
+                img.height = info["height"]
+
             updated_images += len(compressed_images)
             ws._images[:] = compressed_images
 
