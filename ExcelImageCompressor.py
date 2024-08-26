@@ -11,12 +11,10 @@ from datetime import datetime
 import subprocess
 
 
-# フォルダ選択ダイアログを表示し、選択したフォルダのパスを返す関数
 def select_folder():
     return filedialog.askdirectory()
 
 
-# 指定されたフォルダ内の全てのExcelファイルを検索する関数
 def find_excel_files(folder):
     return [
         os.path.join(root, file)
@@ -26,7 +24,6 @@ def find_excel_files(folder):
     ]
 
 
-# 画像を圧縮する関数
 def compress_image(image):
     with Image.open(BytesIO(image._data())) as img:
         img_byte_arr = BytesIO()
@@ -34,12 +31,10 @@ def compress_image(image):
         return OpenpyxlImage(img_byte_arr)
 
 
-# ファイルサイズをKB単位で取得する関数
 def get_file_size_in_kb(file_path):
     return os.path.getsize(file_path) / 1024
 
 
-# Excelファイル内の画像を圧縮する関数
 def process_file(file):
     start_time = time.time()
     original_size = get_file_size_in_kb(file)
@@ -74,15 +69,13 @@ def process_file(file):
     }
 
 
-# 圧縮結果を報告するレポートを作成する関数
 def create_report(report_data, folder):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     report_file = os.path.join(folder, f"report_{timestamp}.xlsx")
     workbook = Workbook()
     sheet = workbook.active
-    sheet.title = "Report"
+    sheet.title = "レポート"
 
-    # レポートのヘッダーを設定
     headers = [
         "Date",
         "Orig Size (KB)",
@@ -96,12 +89,15 @@ def create_report(report_data, folder):
     ]
     sheet.append(headers)
 
-    # データ行をフォーマットして追加
     def format_row(row):
         return [
             f"{value:.1f}" if isinstance(value, (int, float)) else value
             for value in row
         ]
+
+    total_original_size = 0
+    total_new_size = 0
+    total_elapsed_time = 0
 
     for data in report_data:
         path, file = os.path.relpath(data["file"], folder), os.path.basename(
@@ -115,10 +111,14 @@ def create_report(report_data, folder):
             path if path != file else ".",
             file,
             data["elapsed_time"],
-            "Success" if not data["error_message"] else "Failed",
+            "成功" if not data["error_message"] else "失敗",
             data["error_message"] or "",
         ]
         sheet.append(format_row(row))
+
+        total_original_size += data["original_size"]
+        total_new_size += data["new_size"]
+        total_elapsed_time += data["elapsed_time"]
 
     # 数値列のフォーマットを設定
     for col in range(1, 10):
@@ -127,11 +127,27 @@ def create_report(report_data, folder):
                 if isinstance(c.value, (int, float)):
                     c.number_format = "0.0"
 
+    # 合計行を追加
+    compression_ratio = (
+        (1 - total_new_size / total_original_size) * 100
+        if total_original_size > 0
+        else 0
+    )
+    summary_row = [
+        "",
+        f"{total_original_size / 1024:.2f} MB",
+        f"{total_new_size / 1024:.2f} MB ({compression_ratio:.2f}%)",
+        "",
+        "",
+        f"{total_elapsed_time / 1000:.2f} s",
+        "",
+    ]
+    sheet.append(summary_row)
+
     workbook.save(report_file)
     return report_file
 
 
-# フォルダ内の全てのExcelファイルの画像を圧縮し、レポートを作成する関数
 def compress_images_in_folder(folder, progress_callback):
     files = find_excel_files(folder)
     report_data = []
@@ -145,28 +161,26 @@ def compress_images_in_folder(folder, progress_callback):
     return len(files), report_file
 
 
-# アプリケーションのGUIを定義するクラス
 class ExcelImageCompressorApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Excel Image Compressor")
         self.selected_folder = tk.StringVar()
 
-        # GUIの構成要素を作成
         frame = tk.Frame(root, padx=10, pady=10)
         frame.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
 
-        self.folder_label = tk.Label(frame, text="Select Folder:")
+        self.folder_label = tk.Label(frame, text="フォルダ選択:")
         self.folder_label.grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
 
         self.folder_entry = tk.Entry(frame, textvariable=self.selected_folder, width=40)
         self.folder_entry.grid(row=0, column=1, padx=5, pady=5)
 
-        self.select_button = tk.Button(frame, text="Browse", command=self.set_folder)
+        self.select_button = tk.Button(frame, text="参照", command=self.set_folder)
         self.select_button.grid(row=0, column=2, padx=5, pady=5)
 
         self.start_button = tk.Button(
-            frame, text="Start Compression", command=self.compress_images
+            frame, text="圧縮開始", command=self.compress_images
         )
         self.start_button.grid(row=1, column=0, columnspan=3, pady=10)
 
@@ -178,15 +192,13 @@ class ExcelImageCompressorApp:
         self.progress_label = tk.Label(frame, text="0.00%")
         self.progress_label.grid(row=2, column=2, padx=5, pady=10, sticky=tk.W)
 
-    # フォルダ選択ボタンの処理
     def set_folder(self):
         self.selected_folder.set(select_folder())
 
-    # 圧縮処理を開始するメソッド
     def compress_images(self):
         folder = self.selected_folder.get()
         if not folder:
-            messagebox.showerror("Error", "No folder selected.")
+            messagebox.showerror("エラー", "フォルダが選択されていません。")
             return
 
         try:
@@ -194,16 +206,14 @@ class ExcelImageCompressorApp:
                 folder, self.update_progress
             )
             messagebox.showinfo(
-                "Completed",
-                f"Compression completed for {total_files} files. Report generated at:\n{report_file}",
+                "完了",
+                f"{total_files} 件のファイルの圧縮が完了しました。レポートが作成されました:\n{report_file}",
             )
-            # レポートファイルをExcelで開き、アプリケーションを終了
             subprocess.run(["start", "excel", report_file], shell=True)
             self.root.destroy()
         except Exception as e:
-            messagebox.showerror("Error", f"An error occurred: {e}")
+            messagebox.showerror("エラー", f"エラーが発生しました: {e}")
 
-    # プログレスバーを更新するメソッド
     def update_progress(self, current, total):
         percentage = (current / total) * 100
         self.progress["maximum"] = total
@@ -212,7 +222,6 @@ class ExcelImageCompressorApp:
         self.root.update_idletasks()
 
 
-# メイン関数
 def main():
     root = tk.Tk()
     app = ExcelImageCompressorApp(root)
